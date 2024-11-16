@@ -663,9 +663,9 @@ void main_imu_thread(void)
 				if (sensor_imu->fifo_process(i, rawData, raw_g))
 					continue; // skip on error
 				// transform and convert to float values
-				float gx = raw_g[0] - gyroBias[0]; //gres
-				float gy = raw_g[1] - gyroBias[1]; //gres
-				float gz = raw_g[2] - gyroBias[2]; //gres
+				float gx = (raw_g[0] - gyroBias[0]) * (1.0+global_sensitivity[0]); //gres
+				float gy = (raw_g[1] - gyroBias[1]) * (1.0+global_sensitivity[1]); //gres
+				float gz = (raw_g[2] - gyroBias[2]) * (1.0+global_sensitivity[2]); //gres
 				float g_aligned[] = {SENSOR_GYROSCOPE_AXES_ALIGNMENT};
 				memcpy(g, g_aligned, sizeof(g));
 
