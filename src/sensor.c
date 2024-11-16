@@ -307,8 +307,12 @@ void sensor_retained_read(void) // TODO: move some of this to sys?
 	memcpy(gyroBias, retained.gyroBias, sizeof(gyroBias));
 	memcpy(magBias, retained.magBias, sizeof(magBias));
 	memcpy(magBAinv, retained.magBAinv, sizeof(magBAinv));
+	memcpy(global_sensitivity, retained.global_sensitivity, sizeof(global_sensitivity));
+
 	LOG_INF("Accelerometer bias: %.5f %.5f %.5f", accelBias[0], accelBias[1], accelBias[2]);
 	LOG_INF("Gyroscope bias: %.5f %.5f %.5f", gyroBias[0], gyroBias[1], gyroBias[2]);
+	LOG_INF("Gyroscope Sensitivity data: %.4f %.4f %.4f", global_sensitivity[0], global_sensitivity[1], global_sensitivity[2]);
+
 	LOG_INF("Magnetometer bridge offset: %.5f %.5f %.5f", magBias[0], magBias[1], magBias[2]);
 	LOG_INF("Magnetometer matrix:");
 	for (int i = 0; i < 3; i++)

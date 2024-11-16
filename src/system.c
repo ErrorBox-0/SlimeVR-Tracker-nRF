@@ -13,6 +13,7 @@
 #include "system.h"
 
 static struct nvs_fs fs;
+float global_sensitivity[3]={0.0,0.0,0.0};
 
 #define NVS_PARTITION		storage_partition
 #define NVS_PARTITION_DEVICE	FIXED_PARTITION_DEVICE(NVS_PARTITION)
@@ -126,6 +127,8 @@ static int sys_retained_init(void)
 		nvs_read(&fs, MAIN_ACCEL_BIAS_ID, &retained.accelBias, sizeof(retained.accelBias));
 		nvs_read(&fs, MAIN_GYRO_BIAS_ID, &retained.gyroBias, sizeof(retained.gyroBias));
 		nvs_read(&fs, MAIN_MAG_BIAS_ID, &retained.magBAinv, sizeof(retained.magBAinv));
+		nvs_read(&fs, MAIN_GYRO_SENSITIVITY_ID, &retained.global_sensitivity, sizeof(retained.global_sensitivity));
+		
 		retained_update();
 		ram_retention = true;
 	}

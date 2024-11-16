@@ -10,6 +10,7 @@
 #define MAIN_ACCEL_BIAS_ID 3
 #define MAIN_GYRO_BIAS_ID 4
 #define MAIN_MAG_BIAS_ID 5
+#define MAIN_GYRO_SENSITIVITY_ID 6
 
 void configure_sense_pins(void);
 
@@ -25,5 +26,5 @@ bool button_read(void);
 bool dock_read(void);
 bool chg_read(void);
 bool stby_read(void);
-
+extern float global_sensitivity[3];
 #endif

@@ -29,7 +29,8 @@ struct retained_data {
 
 	uint8_t imu_reg;
 	uint8_t mag_reg;
-
+	float global_sensitivity[3];
+	
 	/* CRC used to validate the retained data.  This must be
 	 * stored little-endian, and covers everything up to but not
 	 * including this field.

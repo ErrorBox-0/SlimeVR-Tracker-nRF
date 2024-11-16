@@ -88,11 +88,13 @@ static void console_thread(void)
 	printk("reboot                       Soft reset the device\n");
 	printk("calibrate                    Calibrate sensor ZRO\n");
 	printk("pair                         Clear pairing data\n");
+	printk("sens                         Gyro Sens Calibration ex)sens,5,-5,2\n");
 
 	uint8_t command_info[] = "info";
 	uint8_t command_reboot[] = "reboot";
 	uint8_t command_calibrate[] = "calibrate";
 	uint8_t command_pair[] = "pair";
+	uint8_t command_sens[] = "sens,";
 
 #if DFU_EXISTS
 	printk("dfu                          Enter DFU bootloader\n");
@@ -125,6 +127,27 @@ static void console_thread(void)
 			reboot_counter_write(102);
 			k_msleep(1);
 			sys_reboot(SYS_REBOOT_WARM);
+		}
+		
+		else if (memcmp(line, command_sens, 4) == 0)
+		{
+			uint8_t* str = strtok(line,",");
+			str = strtok(NULL,",");
+
+			int num = 0;
+			while (str!=NULL)
+			{
+				// printk("%s\n",str);
+				float f = atof(str);
+				
+				float cf = (360 / (360-f))-1.0;
+				// printk("x%.4f\n",cf);
+				global_sensitivity[num++]=cf;
+				str = strtok(NULL,",");
+			}
+			printk("x%.4f,y%.4f,z%.4f \n",global_sensitivity[0],global_sensitivity[1],global_sensitivity[2]);
+			sys_write(MAIN_GYRO_SENSITIVITY_ID,&retained.global_sensitivity,global_sensitivity,sizeof(global_sensitivity));
+			
 		}
 #if DFU_EXISTS
 		else if (memcmp(line, command_dfu, sizeof(command_dfu)) == 0)

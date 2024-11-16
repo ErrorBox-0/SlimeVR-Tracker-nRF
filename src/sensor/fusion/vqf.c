@@ -19,12 +19,12 @@ static void set_params()
 {
 	init_params(&params);
 	params.biasSigmaInit = 1.0f; // naive values from https://github.com/kounocom/SlimeVR-Tracker-ESP/blob/dynamic-sfusion/src/sensors/SensorFusion.h
-	params.biasForgettingTime = 30.0f;
-	params.biasSigmaMotion = 0.1175f;
-	params.biasVerticalForgettingFactor = 0;
-	params.biasSigmaRest = 0.007f;
+	// params.biasForgettingTime = 30.0f;
+	// params.biasVerticalForgettingFactor = 0;
+	params.biasSigmaMotion = 0.1f;
+	params.biasSigmaRest = 0.01f;
 	params.restThGyr = 1.0f; // 400 norm
-	params.restThAcc = 0.196f; // 100 norm
+	params.restThAcc = 0.25; // 100 norm
 }
 
 void vqf_init(float g_time, float a_time, float m_time)
