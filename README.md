@@ -8,7 +8,7 @@
 - sens,4,5,-2
 
 ## Hardware
-- https://github.com/SlimeVR/SlimeNRF-PCB
+- https://github.com/SlimeVR/SlimeVR-Tracker-nRF-PCB
 - https://oshwlab.com/sctanf/slimenrf3
 
 
