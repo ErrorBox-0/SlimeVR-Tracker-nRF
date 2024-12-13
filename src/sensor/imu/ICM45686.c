@@ -7,7 +7,7 @@
 #include "../sensor_none.h"
 
 static const float accel_sensitivity = 16.0f / 32768.0f; // Always 16G
-static const float gyro_sensitivity = 2000.0f / 32768.0f; // Always 2000dps
+static const float gyro_sensitivity = 1000.0f / 32768.0f; // Always 2000dps
 
 static uint8_t last_accel_odr = 0xff;
 static uint8_t last_gyro_odr = 0xff;
@@ -31,9 +31,9 @@ int icm45_init(const struct i2c_dt_spec *dev_i2c, float clock_rate, float accel_
 	err |= icm45_update_odr(dev_i2c, accel_time, gyro_time, accel_actual_time, gyro_actual_time);
 //	k_msleep(50); // 10ms Accel, 30ms Gyro startup
 	k_msleep(1); // fuck i dont wanna wait that long
-	err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x04); // enable FIFO gyro only
+	// err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x06); // enable FIFO gyro only
 	err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x40 | 0b000111); // set FIFO Stream mode, set FIFO depth to 2K bytes
-	err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x05); // begin FIFO stream (FIFO gyro only)
+	err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x07); // begin FIFO stream (FIFO gyro only)
 	if (err)
 		LOG_ERR("I2C error");
 	return (err < 0 ? err : 0);
@@ -52,12 +52,12 @@ int icm45_update_odr(const struct i2c_dt_spec *dev_i2c, float accel_time, float 
 {
 	int ODR;
 	uint8_t ACCEL_UI_FS_SEL = ACCEL_UI_FS_SEL_16G;
-	uint8_t GYRO_UI_FS_SEL = GYRO_UI_FS_SEL_2000DPS;
+	uint8_t GYRO_UI_FS_SEL = GYRO_UI_FS_SEL_1000DPS;
 	uint8_t ACCEL_MODE;
 	uint8_t GYRO_MODE;
 	uint8_t ACCEL_ODR;
 	uint8_t GYRO_ODR;
-
+    accel_time *=2;
 	// Calculate accel
 	if (accel_time <= 0 || accel_time == INFINITY) // off, standby interpreted as off
 	{
@@ -208,11 +208,11 @@ int icm45_update_odr(const struct i2c_dt_spec *dev_i2c, float accel_time, float 
 
 	int err = 0;
 	// only if the power mode has changed
-	if (last_accel_odr == 0xff || last_gyro_odr == 0xff || (last_accel_odr == 0 ? 0 : 1) != (ACCEL_ODR == 0 ? 0 : 1) || (last_gyro_odr == 0 ? 0 : 1) != (GYRO_ODR == 0 ? 0 : 1))
-	{ // TODO: can't tell difference between gyro off and gyro standby
+	// if (last_accel_odr == 0xff || last_gyro_odr == 0xff || (last_accel_odr == 0 ? 0 : 1) != (ACCEL_ODR == 0 ? 0 : 1) || (last_gyro_odr == 0 ? 0 : 1) != (GYRO_ODR == 0 ? 0 : 1))
+	// { // TODO: can't tell difference between gyro off and gyro standby
 		err |= i2c_reg_write_byte_dt(dev_i2c, ICM45686_PWR_MGMT0, GYRO_MODE << 2 | ACCEL_MODE); // set accel and gyro modes
 		k_busy_wait(250); // wait >200us // TODO: is this needed?
-	}
+	// }
 	last_accel_odr = ACCEL_ODR;
 	last_gyro_odr = GYRO_ODR;
 
@@ -227,51 +227,69 @@ int icm45_update_odr(const struct i2c_dt_spec *dev_i2c, float accel_time, float 
 	return 0;
 }
 
+#define PAKET_SIZE 16
 uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len) // TODO: check if working
 {
 	uint8_t rawCount[2];
 	int err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
 	uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // Turn the 16 bits into a unsigned 16-bit value
-	uint16_t count = packets * 8; // FIFO packet size is 8 bytes for Gyro-only
-	uint16_t limit = len / 8;
+	uint16_t count = packets * PAKET_SIZE; // FIFO packet size is 8 bytes for Gyro-only
+	uint16_t limit = len / PAKET_SIZE;
+	if(packets == 0) return 0;
+	// printk("%d %d \n",packets, count);
 	if (packets > limit)
 	{
 		packets = limit;
-		count = packets * 8;
+		count = packets * PAKET_SIZE;
 	}
 	uint16_t offset = 0;
 	uint8_t addr = ICM45686_FIFO_DATA;
 	err |= i2c_write_dt(dev_i2c, &addr, 1); // Start read buffer
 	while (count > 0)
 	{
-		err |= i2c_read_dt(dev_i2c, &data[offset], count > 248 ? 248 : count); // Read less than 255 at a time (for nRF52832)
-		offset += 248;
-		count = count > 248 ? count - 248 : 0;
+		err |= i2c_read_dt(dev_i2c, &data[offset], count > 128 ? 128 : count); // Read less than 255 at a time (for nRF52832)
+		offset += 128;
+		count = count > 128 ? count - 128 : 0;
 	}
 	if (err)
 		LOG_ERR("I2C error");
 	else if (packets != 0) // keep reading until FIFO is empty
-		packets += icm45_fifo_read(dev_i2c, &data[packets * 8], len - packets * 8);
+		packets += icm45_fifo_read(dev_i2c, &data[packets * PAKET_SIZE], len - packets * PAKET_SIZE);
 	return packets;
 }
 
-int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3])
+int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
 {
+
+	int res = 0;
 	index *= 8; // Packet size 8 bytes
 	// TODO: No way to tell if packet is empty?
 	// combine into 16 bit values
-	float raw[3];
+
+	uint8_t header = data[0];
+	float rawa[3];
+	rawa[0]= (int16_t)(data[2] << 8 | data[1]);
+	rawa[1]= (int16_t)(data[4] << 8 | data[3]);
+	rawa[2]= (int16_t)(data[6] << 8 | data[5]);
+
+	if(data[1]!=0&&data[2]!=128){
+		for (int i = 0; i < 3; i++) // x, y, z
+			rawa[i] *= accel_sensitivity;
+		memcpy(a, rawa, sizeof(rawa));
+		res +=1;
+	}
+	else{
+		a[0] = 0;
+		a[1] = 0;
+		a[2] = 0;
+	}
+	g[0]= (int16_t)(data[8] << 8 | data[7]);
+	g[1]= (int16_t)(data[10] << 8 | data[9]);
+	g[2]= (int16_t)(data[12] << 8 | data[11]);
 	for (int i = 0; i < 3; i++) // x, y, z
-		raw[i] = (int16_t)((((uint16_t)data[index + (i * 2) + 2]) << 8) | data[index + (i * 2) + 1]);
-	// data[index + 7] is temperature
-	// but it is lower precision (also it is disabled)
-	// Temperature in Degrees Centigrade = (FIFO_TEMP_DATA / 2) + 25
-	if (raw[0] < -32766 || raw[1] < -32766 || raw[2] < -32766)
-		return 1; // Skip invalid data
-	for (int i = 0; i < 3; i++) // x, y, z
-		raw[i] *= gyro_sensitivity;
-	memcpy(g, raw, sizeof(raw));
-	return 0;
+		g[i] *= gyro_sensitivity;
+	res +=2;
+	return res;
 }
 
 void icm45_accel_read(const struct i2c_dt_spec *dev_i2c, float a[3])
@@ -282,7 +300,7 @@ void icm45_accel_read(const struct i2c_dt_spec *dev_i2c, float a[3])
 		LOG_ERR("I2C error");
 	for (int i = 0; i < 3; i++) // x, y, z
 	{
-		a[i] = (int16_t)((((uint16_t)rawAccel[(i * 2) + 1]) << 8) | rawAccel[i * 2]);
+		a[i] = (int16_t)((((int16_t)rawAccel[(i * 2) + 1]) << 8) | rawAccel[i * 2]);
 		a[i] *= accel_sensitivity;
 	}
 }
@@ -295,7 +313,7 @@ void icm45_gyro_read(const struct i2c_dt_spec *dev_i2c, float g[3])
 		LOG_ERR("I2C error");
 	for (int i = 0; i < 3; i++) // x, y, z
 	{
-		g[i] = (int16_t)((((uint16_t)rawGyro[(i * 2) + 1]) << 8) | rawGyro[i * 2]);
+		g[i] = (int16_t)((((int16_t)rawGyro[(i * 2) + 1]) << 8) | rawGyro[i * 2]);
 		g[i] *= gyro_sensitivity;
 	}
 }
@@ -307,7 +325,7 @@ float icm45_temp_read(const struct i2c_dt_spec *dev_i2c)
 	if (err)
 		LOG_ERR("I2C error");
 	// Temperature in Degrees Centigrade = (TEMP_DATA / 128) + 25
-	float temp = (int16_t)((((uint16_t)rawTemp[1]) << 8) | rawTemp[0]);
+	float temp = (int16_t)((((int16_t)rawTemp[1]) << 8) | rawTemp[0]);
 	temp /= 128;
 	temp += 25;
 	return temp;

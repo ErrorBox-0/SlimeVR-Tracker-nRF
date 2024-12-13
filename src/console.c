@@ -4,6 +4,7 @@
 #include "esb.h"
 #include "build_defines.h"
 
+
 #define USB DT_NODELABEL(usbd)
 #if DT_NODE_HAS_STATUS(USB, okay) && CONFIG_USE_SLIMENRF_CONSOLE
 
@@ -15,7 +16,7 @@
 #include <zephyr/logging/log_ctrl.h>
 
 #include <ctype.h>
-
+#include <math.h>
 LOG_MODULE_REGISTER(console, LOG_LEVEL_INF);
 
 static void usb_init_thread(void);
@@ -104,6 +105,9 @@ static void print_info(void)
 	printk("Magnetometer matrix:\n");
 	for (int i = 0; i < 3; i++)
 		printk("%.5f %.5f %.5f %.5f\n", (double)retained.magBAinv[0][i], (double)retained.magBAinv[1][i], (double)retained.magBAinv[2][i], (double)retained.magBAinv[3][i]);
+	printk("Accelerometer matrix:\n");
+	for (int i = 0; i < 3; i++)
+		printk("%.5f %.5f %.5f %.5f\n", (double)retained.accBAinv[0][i], (double)retained.accBAinv[1][i], (double)retained.accBAinv[2][i], (double)retained.accBAinv[3][i]);
 
 	printk("Fusion: %s\n", sensor_get_sensor_fusion_name());
 
@@ -166,6 +170,9 @@ static void console_thread(void)
 		{
 //			reboot_counter_write(101);
 			sensor_request_calibration();
+			// float accelBias[3] = {NAN}, gyroBias[3] = {NAN}; // TODO: should be cleared in sensor.c
+			// sys_write(MAIN_ACCEL_BIAS_ID, &retained.accelBias, accelBias, sizeof(accelBias));
+			// sys_write(MAIN_GYRO_BIAS_ID, &retained.gyroBias, gyroBias, sizeof(gyroBias));
 			k_msleep(1);
 			sys_reboot(SYS_REBOOT_WARM);
 		}
@@ -173,6 +180,9 @@ static void console_thread(void)
 		else if (memcmp(line, command_6_side, sizeof(command_6_side)) == 0)
 		{
 			sensor_request_calibration_6_side();
+			// float accBAinv[4][3];
+			// accBAinv[0][0] = NAN;
+			// sys_write(MAIN_ACC_6_BIAS_ID, &retained.accBAinv, accBAinv, sizeof(accBAinv));
 			k_msleep(1);
 			sys_reboot(SYS_REBOOT_WARM);
 		}

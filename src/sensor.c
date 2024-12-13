@@ -439,14 +439,14 @@ void sensor_calibrate_mag(void)
 
 int sensor_calibration_validate(void)
 {
-	float zero[3] = {0};
-	if (!v_epsilon(accelBias, zero, 0.5) || !v_epsilon(gyroBias, zero, 50.0)) // TODO: this is using v_epsilon to compare zero. Check accel is <0.5G and gyro <50dps
-	{
-		sensor_calibration_clear();
-		LOG_WRN("Invalidated calibration");
-		LOG_WRN("The IMU may be damaged or calibration was not completed properly");
-		return -1;
-	}
+	// float zero[3] = {0};
+	// if (!v_epsilon(accelBias, zero, 1.0) || !v_epsilon(gyroBias, zero, 100.0)) // TODO: this is using v_epsilon to compare zero. Check accel is <0.5G and gyro <50dps
+	// {
+	// 	sensor_calibration_clear();
+	// 	LOG_WRN("Invalidated calibration");
+	// 	LOG_WRN("The IMU may be damaged or calibration was not completed properly");
+	// 	return -1;
+	// }
 	return 0;
 }
 
@@ -477,8 +477,8 @@ void sensor_calibration_clear(void)
 
 void sensor_request_calibration(void)
 {
-	accelBias[0] = NAN;
-	sys_write(MAIN_ACCEL_BIAS_ID, &retained.accelBias, accelBias, sizeof(accelBias));
+	gyroBias[0] = NAN;
+	sys_write(MAIN_GYRO_BIAS_ID, &retained.gyroBias, gyroBias, sizeof(gyroBias));
 
 	sensor_calibration_fusion_invalidate();
 }
@@ -521,7 +521,7 @@ bool wait_for_motion(const struct i2c_dt_spec *dev_i2c, bool motion, int samples
 		memcpy(last_a, a, sizeof(a));
 	}
 	LOG_INF("Motion detected");
-	return false;
+	return true;
 }
 
 int sensor_update_time_ms = 6;
@@ -581,9 +581,10 @@ int main_imu_init(void)
 	{
 		sensor_fusion->init(gyro_actual_time, accel_initial_time, accel_initial_time); // TODO: using initial time since accel and mag are not polled at the actual rate
 	}
-
+	// k_msleep(2500);
 	// Calibrate IMU
-	if (isnan(accelBias[0]))
+	// LOG_INF("(init)Gyroscope bias: %.5f %.5f %.5f", (double)gyroBias[0], (double)gyroBias[1], (double)gyroBias[2]);
+	if (isnan(gyroBias[0])) // TODO: better way to check?
 		sensor_calibrate_imu();
 	else
 		sensor_calibration_validate();
@@ -644,20 +645,11 @@ void main_imu_thread(void)
 			// Read IMU temperature
 			float temp = sensor_imu->temp_read(&sensor_imu_dev); // TODO: use as calibration data
 			connection_update_sensor_temp(temp);
-
-			// Read gyroscope (FIFO)
-			uint8_t rawData[512]; // Limit FIFO read to 512 bytes
-			uint16_t packets = sensor_imu->fifo_read(&sensor_imu_dev, rawData, 512); // TODO: name this better?
+			uint8_t rawData[768]; // Limit FIFO read to 512 bytes
+			uint16_t packets = sensor_imu->fifo_read(&sensor_imu_dev, rawData, 768); // TODO: name this better?
 			LOG_DBG("IMU packet count: %u", packets);
-
-			// Read accelerometer
-			float raw_a[3];
-			sensor_imu->accel_read(&sensor_imu_dev, raw_a);
 #if CONFIG_SENSOR_USE_6_SIDE_CALIBRATION
-			apply_BAinv(raw_a, accBAinv);
-			float ax = raw_a[0];
-			float ay = raw_a[1];
-			float az = raw_a[2];
+
 #else
 			float ax = raw_a[0] - accelBias[0];
 			float ay = raw_a[1] - accelBias[1];
@@ -666,67 +658,29 @@ void main_imu_thread(void)
 
 			// Read magnetometer and process magneto
 			float mx = 0, my = 0, mz = 0;
-			if (mag_available && mag_enabled && sensor_mode == SENSOR_SENSOR_MODE_LOW_NOISE)
-			{
-				float m[3];
-				sensor_mag->mag_read(&sensor_mag_dev, m);
-				for (int i = 0; i < 3; i++)
-					m[i] -= magBias[i];
-				magneto_sample(m[0], m[1], m[2], ata, &norm_sum, &sample_count); // 400us
-				apply_BAinv(m, magBAinv);
-				mx = m[0];
-				my = m[1];
-				mz = m[2];
-				int new_mag_progress = mag_progress;
-				new_mag_progress |= (-1.2f < ax && ax < -0.8f ? 1 << 0 : 0) | (1.2f > ax && ax > 0.8f ? 1 << 1 : 0) | // dumb check if all accel axes were reached for calibration, assume the user is intentionally doing this
-					(-1.2f < ay && ay < -0.8f ? 1 << 2 : 0) | (1.2f > ay && ay > 0.8f ? 1 << 3 : 0) |
-					(-1.2f < az && az < -0.8f ? 1 << 4 : 0) | (1.2f > az && az > 0.8f ? 1 << 5 : 0);
-				if (new_mag_progress > mag_progress && new_mag_progress == last_mag_progress)
-				{
-					if (k_uptime_get() > mag_progress_time)
-					{
-						mag_progress = new_mag_progress;
-						//LOG_INF("Magnetometer calibration progress: %d", new_mag_progress);
-						LOG_INF("Magnetometer calibration progress: %s %s %s %s %s %s" , (new_mag_progress & 0x01) ? "-X" : "--", (new_mag_progress & 0x02) ? "+X" : "--", (new_mag_progress & 0x04) ? "-Y" : "--", (new_mag_progress & 0x08) ? "+Y" : "--", (new_mag_progress & 0x10) ? "-Z" : "--", (new_mag_progress & 0x20) ? "+Z" : "--");
-						set_led(SYS_LED_PATTERN_ONESHOT_PROGRESS, SYS_LED_PRIORITY_SENSOR);
-					}
-				}
-				else
-				{
-					mag_progress_time = k_uptime_get() + 1000;
-					last_mag_progress = new_mag_progress;
-				}
-				if (mag_progress == 0b111111)
-					set_led(SYS_LED_PATTERN_FLASH, SYS_LED_PRIORITY_SENSOR); // Magnetometer calibration is ready to apply
-			}
-
-			if (mag_available && mag_enabled && reconfig) // TODO: get rid of reconfig?
-			{
-				switch (sensor_mode)
-				{
-				case SENSOR_SENSOR_MODE_LOW_NOISE:
-					set_update_time_ms(6);
-					LOG_INF("Switching sensors to low noise");
-					break;
-				case SENSOR_SENSOR_MODE_LOW_POWER:
-					set_update_time_ms(33);
-					LOG_INF("Switching sensors to low power");
-					sensor_mag->update_odr(&sensor_mag_dev, INFINITY, &mag_actual_time); // standby/oneshot
-					break;
-				};
-			}
-
 			// Fuse all data
-			float a[] = {SENSOR_ACCELEROMETER_AXES_ALIGNMENT};
+			float a[3] = {0};
 			float g[3] = {0};
 			float m[] = {SENSOR_MAGNETOMETER_AXES_ALIGNMENT};
 			float z[3] = {0};
 			max_gyro_speed_square = 0;
 			for (uint16_t i = 0; i < packets; i++) // TODO: fifo_process_ext is available, need to implement it
 			{
+
 				float raw_g[3];
-				if (sensor_imu->fifo_process(i, rawData, raw_g))
-					continue; // skip on error
+				float raw_a[3];
+
+				int flag = sensor_imu->fifo_process(i, rawData, raw_g, raw_a);
+				if(flag == 1 ||flag == 3){
+					apply_BAinv(raw_a, accBAinv);
+					float ax = raw_a[0];
+					float ay = raw_a[1];
+					float az = raw_a[2];
+					float a_aligned[] = {SENSOR_ACCELEROMETER_AXES_ALIGNMENT};
+					memcpy(a, a_aligned, sizeof(a));
+					sensor_fusion->update_accel(a, accel_actual_time);
+				}
+
 				// transform and convert to float values
 				float gx = raw_g[0] - gyroBias[0]; //gres
 				float gy = raw_g[1] - gyroBias[1]; //gres
@@ -736,24 +690,7 @@ void main_imu_thread(void)
 
 				// Process fusion
 				sensor_fusion->update_gyro(g, gyro_actual_time);
-//				sensor_fusion->update(g, a, m, gyro_actual_time);
-
-				if (mag_available && mag_enabled)
-				{
-					// Get fusion's corrected gyro data (or get gyro bias from fusion) and use it here
-					float g_off[3] = {};
-					sensor_fusion->get_gyro_bias(g_off);
-					for (int i = 0; i < 3; i++)
-						g_off[i] = g[i] - g_off[i];
-
-					// Get the highest gyro speed
-					float gyro_speed_square = g_off[0] * g_off[0] + g_off[1] * g_off[1] + g_off[2] * g_off[2];
-					if (gyro_speed_square > max_gyro_speed_square)
-						max_gyro_speed_square = gyro_speed_square;
-				}
 			}
-			sensor_fusion->update(z, a, m, sensor_update_time_ms / 1000.0); // TODO: use actual time?
-
 			// Update fusion gyro sanity?
 			sensor_fusion->update_gyro_sanity(g, m);
 
@@ -788,27 +725,6 @@ void main_imu_thread(void)
 				sensor_mode = SENSOR_SENSOR_MODE_LOW_NOISE;
 			}
 
-			// Update magnetometer mode
-			if (mag_available && mag_enabled && sensor_mode == SENSOR_SENSOR_MODE_LOW_NOISE)
-			{
-				float gyro_speed = sqrtf(max_gyro_speed_square);
-				float mag_target_time = 1.0f / (4 * gyro_speed); // target mag ODR for ~0.25 deg error
-				if (mag_target_time < 0.005f) // cap at 0.005 (200hz), above this the sensor will use oneshot mode instead
-				{
-					mag_target_time = 0.005;
-					int err = sensor_mag->update_odr(&sensor_mag_dev, INFINITY, &mag_actual_time);
-					if (!err)
-						LOG_DBG("Switching magnetometer to oneshot");
-					mag_use_oneshot = true;
-				}
-				if (mag_target_time >= 0.005f || mag_actual_time != INFINITY) // under 200Hz or magnetometer did not have a oneshot mode
-				{
-					int err = sensor_mag->update_odr(&sensor_mag_dev, mag_target_time, &mag_actual_time);
-					if (!err)
-						LOG_DBG("Switching magnetometer ODR to %.2fHz", 1.0 / (double)mag_actual_time);
-					mag_use_oneshot = false;
-				}
-			}
 
 			// Check if last status is outdated
 			if (!send_info && (k_uptime_get() - last_info_time > 100))
@@ -840,21 +756,6 @@ void main_imu_thread(void)
 			{
 				connection_write_packet_0();
 				send_info = false;
-			}
-
-			// Handle magnetometer calibration or bridge offset calibration
-			if (mag_available && mag_enabled && last_sensor_mode == SENSOR_SENSOR_MODE_LOW_POWER && sensor_mode == SENSOR_SENSOR_MODE_LOW_POWER)
-			{
-				if (mag_progress == 0b111111) // Save magnetometer calibration while idling
-				{
-					sensor_calibrate_mag();
-					set_led(SYS_LED_PATTERN_ONESHOT_COMPLETE, SYS_LED_PRIORITY_SENSOR);
-				}
-				else // only enough time to do one of the two
-				{
-					sensor_mag->temp_read(&sensor_mag_dev, magBias); // for some applicable magnetometer, calibrates bridge offsets
-					sensor_retained_write();
-				}
 			}
 		}
 		main_running = false;
@@ -902,8 +803,8 @@ int sensor_offsetBias(const struct i2c_dt_spec *dev_i2c, float *dest1, float *de
 	for (int i = 0; i < 500; i++)
 	{
 		sensor_imu->accel_read(dev_i2c, rawData);
-		if (v_epsilon(rawData, last_a, 0.1))
-			return -1;
+		// if (v_epsilon(rawData, last_a, 0.1))
+		// 	return -1;
 #if !CONFIG_SENSOR_USE_6_SIDE_CALIBRATION
 		dest1[0] += rawData[0];
 		dest1[1] += rawData[1];
