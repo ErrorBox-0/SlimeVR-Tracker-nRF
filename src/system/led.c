@@ -91,9 +91,9 @@ void set_led(enum sys_led_pattern led_pattern, int priority)
 static void led_thread(void)
 {
 
-	gpio_pin_set_dt(&led, 1);
-	k_thread_suspend(led_thread_id);
-	return;
+	// gpio_pin_set_dt(&led, 1);
+	// k_thread_suspend(led_thread_id);
+	// return;
 #if !LED_EXISTS
 	LOG_WRN("LED GPIO does not exist");
 	return;
