@@ -14,6 +14,8 @@ static uint8_t last_gyro_odr = 0xff;
 static const float clock_reference = 32000;
 static float clock_scale = 1; // ODR is scaled by clock_rate/clock_reference
 
+static int heder_reset_err = 0;
+
 LOG_MODULE_REGISTER(ICM45686, LOG_LEVEL_DBG);
 
 int icm45_init(const struct i2c_dt_spec *dev_i2c, float clock_rate, float accel_time, float gyro_time, float *accel_actual_time, float *gyro_actual_time)
@@ -230,6 +232,17 @@ int icm45_update_odr(const struct i2c_dt_spec *dev_i2c, float accel_time, float 
 #define PAKET_SIZE 16
 uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len) // TODO: check if working
 {
+	if(heder_reset_err>5){
+		printk("Error!!!! Spiiiiin!!!");
+		heder_reset_err = 0;
+		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x00);
+		k_busy_wait(250); 
+		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x40 | 0b000111); // set FIFO Stream mode, set FIFO depth to 2K bytes
+		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x07);
+
+		k_busy_wait(250); 
+	}
+
 	uint8_t rawCount[2];
 	int err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
 	uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // Turn the 16 bits into a unsigned 16-bit value
@@ -266,7 +279,13 @@ int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
 	// TODO: No way to tell if packet is empty?
 	// combine into 16 bit values
 
+
 	uint8_t header = data[0];
+	if(!(header&0b01100000)){
+		heder_reset_err++;
+		printk("Header Error, %x, %d \n",header, heder_reset_err);
+	}
+
 	float rawa[3];
 	rawa[0]= (int16_t)(data[2] << 8 | data[1]);
 	rawa[1]= (int16_t)(data[4] << 8 | data[3]);
