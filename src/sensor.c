@@ -666,10 +666,8 @@ void main_imu_thread(void)
 			max_gyro_speed_square = 0;
 			for (uint16_t i = 0; i < packets; i++) // TODO: fifo_process_ext is available, need to implement it
 			{
-
 				float raw_g[3];
 				float raw_a[3];
-
 				int flag = sensor_imu->fifo_process(i, rawData, raw_g, raw_a);
 				if(flag == 1 ||flag == 3){
 					apply_BAinv(raw_a, accBAinv);
@@ -681,15 +679,15 @@ void main_imu_thread(void)
 					sensor_fusion->update_accel(a, accel_actual_time);
 				}
 
-				// transform and convert to float values
-				float gx = raw_g[0] - gyroBias[0]; //gres
-				float gy = raw_g[1] - gyroBias[1]; //gres
-				float gz = raw_g[2] - gyroBias[2]; //gres
-				float g_aligned[] = {SENSOR_GYROSCOPE_AXES_ALIGNMENT};
-				memcpy(g, g_aligned, sizeof(g));
-
-				// Process fusion
-				sensor_fusion->update_gyro(g, gyro_actual_time);
+				if(flag == 2 ||flag == 3){
+					// transform and convert to float values
+					float gx = raw_g[0] - gyroBias[0]; //gres
+					float gy = raw_g[1] - gyroBias[1]; //gres
+					float gz = raw_g[2] - gyroBias[2]; //gres
+					float g_aligned[] = {SENSOR_GYROSCOPE_AXES_ALIGNMENT};
+					memcpy(g, g_aligned, sizeof(g));
+					sensor_fusion->update_gyro(g, gyro_actual_time);
+				}
 			}
 			// Update fusion gyro sanity?
 			sensor_fusion->update_gyro_sanity(g, m);
