@@ -229,55 +229,11 @@ int icm45_update_odr(const struct i2c_dt_spec *dev_i2c, float accel_time, float 
 	return 0;
 }
 
-// #define PAKET_SIZE 16
-// uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len) // TODO: check if working
-// {
-// 	if(heder_reset_err>5){
-// 		printk("Error!!!! Spiiiiin!!!");
-// 		heder_reset_err = 0;
-// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x00);
-// 		k_busy_wait(250); 
-// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x40 | 0b000111); // set FIFO Stream mode, set FIFO depth to 2K bytes
-// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x07);
-// 		k_busy_wait(250); 
-// 	}
-
-// 	uint8_t rawCount[2];
-// 	int err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
-// 	uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // Turn the 16 bits into a unsigned 16-bit value
-// 	uint16_t count = packets * PAKET_SIZE; // FIFO packet size is 8 bytes for Gyro-only
-// 	uint16_t limit = len / PAKET_SIZE;
-// 	if(packets == 0) return 0;
-// 	// printk("%d %d \n",packets, count);
-// 	if (packets > limit)
-// 	{
-// 		packets = limit;
-// 		count = packets * PAKET_SIZE;
-// 	}
-// 	uint16_t offset = 0;
-// 	uint8_t addr = ICM45686_FIFO_DATA;
-// 	err |= i2c_write_dt(dev_i2c, &addr, 1); // Start read buffer
-// 	while (count > 0)
-// 	{
-// 		err |= i2c_read_dt(dev_i2c, &data[offset], count > 128 ? 128 : count); // Read less than 255 at a time (for nRF52832)
-// 		offset += 128;
-// 		count = count > 128 ? count - 128 : 0;
-// 	}
-// 	if (err)
-// 		LOG_ERR("I2C error");
-// 	// else if (packets != 0) // keep reading until FIFO is empty
-// 	// 	packets += icm45_fifo_read(dev_i2c, &data[packets * PAKET_SIZE], len - packets * PAKET_SIZE);
-// 	return packets;
-// }
 #define PAKET_SIZE 16
-uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len)
+uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len) // TODO: check if working
 {
-    uint8_t rawCount[2];
-    int err = 0;
-    uint16_t total_packets = 0; // 전체 읽은 패킷 수
-    uint16_t offset = 0;        // 데이터 버퍼의 오프셋
 	if(heder_reset_err>5){
-		printk("Error, Spiiiiin!!!");
+		printk("Error!!!! Spiiiiin!!!");
 		heder_reset_err = 0;
 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x00);
 		k_busy_wait(250); 
@@ -285,65 +241,109 @@ uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint1
 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x07);
 		k_busy_wait(250); 
 	}
-    do
-    {
-        // 1. FIFO에 저장된 데이터 개수 확인
-        err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
-        if (err)
-        {
-            LOG_ERR("I2C error during FIFO count read");
-            break;
-        }
 
-        uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // 패킷 수 계산
-        if (packets == 0)
-            break; // 더 이상 읽을 데이터가 없으면 종료
-
-        uint16_t count = packets * PAKET_SIZE; // 총 바이트 수
-        uint16_t limit = len / PAKET_SIZE;     // 버퍼 제한에 따른 패킷 수
-
-        // 버퍼 한도를 초과하지 않도록 패킷 수를 조정
-        if (packets > limit)
-        {
-            packets = limit;
-            count = packets * PAKET_SIZE;
-        }
-
-        // 2. FIFO 데이터 읽기 시작
-        uint8_t addr = ICM45686_FIFO_DATA;
-        err = i2c_write_dt(dev_i2c, &addr, 1); // FIFO 읽기 시작
-        if (err)
-        {
-            LOG_ERR("I2C error during FIFO read start");
-            break;
-        }
-
-        while (count > 0)
-        {
-            uint16_t chunk_size = count > 128 ? 128 : count; // 한 번에 최대 128바이트 읽기
-            err = i2c_read_dt(dev_i2c, &data[offset], chunk_size);
-            if (err)
-            {
-                LOG_ERR("I2C error during FIFO data read");
-                break;
-            }
-
-            offset += chunk_size;
-            count -= chunk_size;
-        }
-
-        // 읽은 패킷 수를 누적
-        total_packets += packets;
-
-        // 버퍼의 남은 공간이 없으면 종료
-        len -= packets * PAKET_SIZE;
-        if (len < PAKET_SIZE)
-            break;
-
-    } while (1); // FIFO에 남은 데이터가 있을 때까지 반복
-
-    return total_packets;
+	uint8_t rawCount[2];
+	int err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
+	uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // Turn the 16 bits into a unsigned 16-bit value
+	uint16_t count = packets * PAKET_SIZE; // FIFO packet size is 8 bytes for Gyro-only
+	uint16_t limit = len / PAKET_SIZE;
+	if(packets == 0) return 0;
+	// printk("%d %d \n",packets, count);
+	if (packets > limit)
+	{
+		packets = limit;
+		count = packets * PAKET_SIZE;
+	}
+	uint16_t offset = 0;
+	uint8_t addr = ICM45686_FIFO_DATA;
+	err |= i2c_write_dt(dev_i2c, &addr, 1); // Start read buffer
+	while (count > 0)
+	{
+		err |= i2c_read_dt(dev_i2c, &data[offset], count > 192 ? 192 : count); // Read less than 255 at a time (for nRF52832)
+		offset += 192;
+		count = count > 192 ? count - 192 : 0;
+	}
+	if (err)
+		LOG_ERR("I2C error");
+	// else if (packets != 0) // keep reading until FIFO is empty
+	// 	packets += icm45_fifo_read(dev_i2c, &data[packets * PAKET_SIZE], len - packets * PAKET_SIZE);
+	return packets;
 }
+// #define PAKET_SIZE 16
+// uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint16_t len)
+// {
+//     uint8_t rawCount[2];
+//     int err = 0;
+//     uint16_t total_packets = 0; // 전체 읽은 패킷 수
+//     uint16_t offset = 0;        // 데이터 버퍼의 오프셋
+// 	if(heder_reset_err>5){
+// 		printk("Error, Spiiiiin!!!");
+// 		heder_reset_err = 0;
+// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x00);
+// 		k_busy_wait(250); 
+// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG0, 0x40 | 0b000111); // set FIFO Stream mode, set FIFO depth to 2K bytes
+// 		i2c_reg_write_byte_dt(dev_i2c, ICM45686_FIFO_CONFIG3, 0x07);
+// 		k_busy_wait(250); 
+// 	}
+//     do
+//     {
+//         // 1. FIFO에 저장된 데이터 개수 확인
+//         err = i2c_burst_read_dt(dev_i2c, ICM45686_FIFO_COUNT_0, &rawCount[0], 2);
+//         if (err)
+//         {
+//             LOG_ERR("I2C error during FIFO count read");
+//             break;
+//         }
+
+//         uint16_t packets = (uint16_t)(rawCount[1] << 8 | rawCount[0]); // 패킷 수 계산
+//         if (packets == 0)
+//             break; // 더 이상 읽을 데이터가 없으면 종료
+
+//         uint16_t count = packets * PAKET_SIZE; // 총 바이트 수
+//         uint16_t limit = len / PAKET_SIZE;     // 버퍼 제한에 따른 패킷 수
+
+//         // 버퍼 한도를 초과하지 않도록 패킷 수를 조정
+//         if (packets > limit)
+//         {
+//             packets = limit;
+//             count = packets * PAKET_SIZE;
+//         }
+
+//         // 2. FIFO 데이터 읽기 시작
+//         uint8_t addr = ICM45686_FIFO_DATA;
+//         err = i2c_write_dt(dev_i2c, &addr, 1); // FIFO 읽기 시작
+//         if (err)
+//         {
+//             LOG_ERR("I2C error during FIFO read start");
+//             break;
+//         }
+
+//         while (count > 0)
+//         {
+//             uint16_t chunk_size = count > 128 ? 128 : count; // 한 번에 최대 128바이트 읽기
+//             err = i2c_read_dt(dev_i2c, &data[offset], chunk_size);
+//             if (err)
+//             {
+//                 LOG_ERR("I2C error during FIFO data read");
+//                 break;
+//             }
+
+//             offset += chunk_size;
+//             count -= chunk_size;
+//         }
+
+//         // 읽은 패킷 수를 누적
+//         total_packets += packets;
+
+//         // 버퍼의 남은 공간이 없으면 종료
+//         len -= packets * PAKET_SIZE;
+//         if (len < PAKET_SIZE)
+//             break;
+
+//     } while (1); // FIFO에 남은 데이터가 있을 때까지 반복
+
+//     return total_packets;
+// }
 
 int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
 {
