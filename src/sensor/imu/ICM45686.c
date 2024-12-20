@@ -344,33 +344,34 @@ uint16_t icm45_fifo_read(const struct i2c_dt_spec *dev_i2c, uint8_t *data, uint1
 
 //     return total_packets;
 // }
-
-int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
+int icm45_fifo_process(uint16_t index, uint8_t *dataraw, float g[3] ,float a[3])
 {
-
 	int res = 0;
-	index *= 8; // Packet size 8 bytes
+	index *= PAKET_SIZE; // Packet size 8 bytes
 	// TODO: No way to tell if packet is empty?
 	// combine into 16 bit values
-
-
+	uint8_t data[PAKET_SIZE];
+	memcpy(data, &dataraw[index], sizeof(data));
 	uint8_t header = data[0];
+
 	if(!(header&0b01100000)){
 		heder_reset_err++;
 		printk("Header Error, %x, %d \n",header, heder_reset_err);
 		return 0;
 	}
-
-	float rawa[3];
-	rawa[0]= (int16_t)(data[2] << 8 | data[1]);
-	rawa[1]= (int16_t)(data[4] << 8 | data[3]);
-	rawa[2]= (int16_t)(data[6] << 8 | data[5]);
+	// printk("h: %x ",header);
+	// if(header != 0x68) return 0;
 
 	if(data[1]!=0&&data[2]!=128){
+		float rawa[3];
+		rawa[0]= (int16_t)(data[2] << 8 | data[1]);
+		rawa[1]= (int16_t)(data[4] << 8 | data[3]);
+		rawa[2]= (int16_t)(data[6] << 8 | data[5]);
 		for (int i = 0; i < 3; i++) // x, y, z
 			rawa[i] *= accel_sensitivity;
 		memcpy(a, rawa, sizeof(rawa));
 		res +=1;
+		// printk("a: %f, %f, %f \n",a[0],a[1],a[2]);
 	}
 	else{
 		a[0] = 0;
@@ -383,8 +384,50 @@ int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
 	for (int i = 0; i < 3; i++) // x, y, z
 		g[i] *= gyro_sensitivity;
 	res +=2;
+
+	// printk("g: %f, %f, %f \n",g[0],g[1],g[2]);
 	return res;
 }
+// int icm45_fifo_process(uint16_t index, uint8_t *data, float g[3], float a[3])
+// {
+
+// 	int res = 0;
+// 	index *= 8; // Packet size 8 bytes
+// 	// TODO: No way to tell if packet is empty?
+// 	// combine into 16 bit values
+
+
+// 	uint8_t header = data[0];
+// 	if(!(header&0b01100000)){
+// 		heder_reset_err++;
+// 		printk("Header Error, %x, %d \n",header, heder_reset_err);
+// 		return 0;
+// 	}
+
+// 	float rawa[3];
+// 	rawa[0]= (int16_t)(data[2] << 8 | data[1]);
+// 	rawa[1]= (int16_t)(data[4] << 8 | data[3]);
+// 	rawa[2]= (int16_t)(data[6] << 8 | data[5]);
+
+// 	if(data[1]!=0&&data[2]!=128){
+// 		for (int i = 0; i < 3; i++) // x, y, z
+// 			rawa[i] *= accel_sensitivity;
+// 		memcpy(a, rawa, sizeof(rawa));
+// 		res +=1;
+// 	}
+// 	else{
+// 		a[0] = 0;
+// 		a[1] = 0;
+// 		a[2] = 0;
+// 	}
+// 	g[0]= (int16_t)(data[8] << 8 | data[7]);
+// 	g[1]= (int16_t)(data[10] << 8 | data[9]);
+// 	g[2]= (int16_t)(data[12] << 8 | data[11]);
+// 	for (int i = 0; i < 3; i++) // x, y, z
+// 		g[i] *= gyro_sensitivity;
+// 	res +=2;
+// 	return res;
+// }
 
 void icm45_accel_read(const struct i2c_dt_spec *dev_i2c, float a[3])
 {
